@@ -178,3 +178,31 @@ export async function getDashboardResources(client, accessToken, guildId) {
       })),
   };
 }
+
+export async function getDashboardMember(client, accessToken, guildId, userId) {
+  const { guild } = await authorizeGuild(client, accessToken, guildId);
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (!member) {
+    const error = new Error('Member not found in this server.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const snowflake = BigInt(userId);
+  const createdAt = new Date(Number((snowflake >> 22n) + 1420070400000n));
+
+  return {
+    id: member.id,
+    username: member.user.username,
+    globalName: member.user.globalName,
+    avatar: member.user.displayAvatarURL({ size: 128 }),
+    bot: member.user.bot,
+    joinedAt: member.joinedAt,
+    accountCreatedAt: createdAt.toISOString(),
+    roles: member.roles.cache.filter((role) => role.id !== guild.id).map((role) => ({
+      id: role.id,
+      name: role.name,
+      color: role.color,
+    })),
+  };
+}
