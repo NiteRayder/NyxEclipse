@@ -2,7 +2,7 @@ import { PermissionFlagsBits } from 'discord.js';
 import { getGuildConfig, patchGuildConfig } from './config/guildConfig.js';
 import { getModerationCases } from '../utils/moderation.js';
 import { getServerCounters } from './serverstatsService.js';
-import { getLoggingStatus } from './loggingService.js';
+import { getLoggingStatus, setLogChannel, setLoggingEnabled, toggleEventLogging } from './loggingService.js';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const authCache = new Map();
@@ -204,4 +204,60 @@ export async function getDashboardMember(client, accessToken, guildId, userId) {
       color: role.color,
     })),
   };
+}
+
+export async function getDashboardAuditLog(client, accessToken, guildId, filters = {}) {
+  const { guild } = await authorizeGuild(client, accessToken, guildId);
+  const config = await getGuildConfig(client, guildId);
+  const channelId = config?.logging?.channels?.audit ?? config?.logging?.channelId ?? null;
+  if (!channelId) return { enabled: false, channel: null, events: [] };
+
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel?.isTextBased()) return { enabled: false, channel: null, events: [] };
+
+  const limit = Math.min(Math.max(Number(filters.limit) || 50, 1), 100);
+  const messages = await channel.messages.fetch({ limit });
+  const events = [...messages.values()]
+    .filter((message) => message.author?.id === client.user.id && message.embeds?.length)
+    .map((message) => ({
+      id: message.id,
+      createdAt: message.createdAt,
+      content: message.content || null,
+      url: message.url,
+      embed: {
+        title: message.embeds[0]?.title || null,
+        description: message.embeds[0]?.description || null,
+        color: message.embeds[0]?.color || null,
+        fields: message.embeds[0]?.fields || [],
+        footer: message.embeds[0]?.footer?.text || null,
+      },
+    }));
+
+  return {
+    enabled: Boolean(config?.logging?.enabled),
+    channel: { id: channel.id, name: channel.name },
+    events,
+  };
+}
+
+export async function updateDashboardLogging(client, accessToken, guildId, patch) {
+  await authorizeGuild(client, accessToken, guildId);
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    const error = new Error('Logging configuration must be an object.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (typeof patch.enabled === 'boolean') await setLoggingEnabled(client, guildId, patch.enabled);
+  if (patch.channels && typeof patch.channels === 'object') {
+    for (const destination of ['audit', 'applications', 'reports']) {
+      if (destination in patch.channels) await setLogChannel(client, guildId, destination, patch.channels[destination] || null);
+    }
+  }
+  if (patch.enabledEvents && typeof patch.enabledEvents === 'object') {
+    const entries = Object.entries(patch.enabledEvents);
+    for (const [eventType, enabled] of entries) {
+      if (typeof enabled === 'boolean') await toggleEventLogging(client, guildId, eventType, enabled);
+    }
+  }
+  return getLoggingStatus(client, guildId);
 }
