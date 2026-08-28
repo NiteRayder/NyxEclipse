@@ -103,9 +103,8 @@ export async function getDashboardGuilds(client, accessToken) {
 
 export async function getDashboardGuild(client, accessToken, guildId) {
   const { guild } = await authorizeGuild(client, accessToken, guildId);
-  const [config, stats, counters, logging] = await Promise.all([
+  const [config, counters, logging] = await Promise.all([
     getGuildConfig(client, guildId),
-    Promise.resolve(null),
     getServerCounters(client, guildId),
     getLoggingStatus(client, guildId),
   ]);
