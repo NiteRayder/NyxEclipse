@@ -13,6 +13,7 @@ import {
   updateDashboardGuildConfig,
   getDashboardCases,
   getDashboardResources,
+  getDashboardMember,
   authenticateDashboardRequest,
 } from './services/dashboardApiService.js';
 import { getServerCounters, saveServerCounters, updateCounter } from './services/serverstatsService.js';
@@ -214,6 +215,14 @@ class NyxEclypse extends Client {
         res.json({ cases: await getDashboardCases(client, req.dashboardToken, req.params.guildId, req.query) });
       } catch (error) {
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load moderation cases.' });
+      }
+    });
+
+    app.get('/api/dashboard/guilds/:guildId/members/:userId', dashboardAuth, async (req, res) => {
+      try {
+        res.json({ member: await getDashboardMember(client, req.dashboardToken, req.params.guildId, req.params.userId) });
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load member.' });
       }
     });
 
