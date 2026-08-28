@@ -17,6 +17,14 @@ import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/database/schemaVersion.js';
+import {
+  createDiscordAuthorizationUrl,
+  completeDiscordCallback,
+  getDiscordSession,
+  destroyDiscordSession,
+  getUserGuilds,
+  getDashboardCallbackUrl,
+} from './services/oauth/index.js';
 
 class TitanBot extends Client {
   constructor() {
@@ -154,6 +162,59 @@ class TitanBot extends Client {
       times.push(now);
       requestCounts.set(ip, times);
       next();
+    });
+
+    app.get('/api/oauth/discord', (req, res) => {
+      try {
+        res.redirect(createDiscordAuthorizationUrl());
+      } catch (error) {
+        logger.error('Failed to start Discord OAuth:', error);
+        res.status(500).json({ error: 'OAuth is not configured.' });
+      }
+    });
+
+    app.get('/api/oauth/discord/callback', async (req, res) => {
+      const { code, state, error: oauthError } = req.query;
+      if (oauthError) return res.status(400).json({ error: `Discord authorization failed: ${oauthError}` });
+      if (typeof code !== 'string' || typeof state !== 'string') return res.status(400).json({ error: 'Missing OAuth code or state.' });
+      try {
+        const { sessionToken } = await completeDiscordCallback({ code, state });
+        return res.redirect(getDashboardCallbackUrl(sessionToken));
+      } catch (error) {
+        logger.error('Discord OAuth callback failed:', error);
+        return res.status(error.statusCode || 500).json({ error: error.statusCode === 400 ? error.message : 'Discord OAuth login failed.' });
+      }
+    });
+
+    app.get('/api/oauth/me', (req, res) => {
+      const auth = req.headers.authorization || '';
+      const sessionToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      const session = getDiscordSession(sessionToken);
+      if (!session) return res.status(401).json({ error: 'Not authenticated.' });
+      return res.json({ user: session.user, expiresAt: session.expiresAt });
+    });
+
+    app.get('/api/oauth/guilds', async (req, res) => {
+      const auth = req.headers.authorization || '';
+      const sessionToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      try {
+        const guilds = await getUserGuilds(sessionToken);
+        const manageableGuilds = guilds.filter((guild) => {
+          const permissions = BigInt(guild.permissions || '0');
+          return guild.owner === true || (permissions & 0x20n) === 0x20n;
+        });
+        return res.json({ guilds: manageableGuilds.map((guild) => ({ id: guild.id, name: guild.name, icon: guild.icon, owner: guild.owner === true, permissions: guild.permissions, botPresent: this.guilds.cache.has(guild.id) })) });
+      } catch (error) {
+        logger.error('Failed to retrieve dashboard guilds:', error);
+        return res.status(error.statusCode || 500).json({ error: error.statusCode === 401 ? error.message : 'Failed to retrieve Discord servers.' });
+      }
+    });
+
+    app.post('/api/oauth/logout', (req, res) => {
+      const auth = req.headers.authorization || '';
+      const sessionToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      destroyDiscordSession(sessionToken);
+      return res.status(204).send();
     });
 
     app.get('/health', (req, res) => {
