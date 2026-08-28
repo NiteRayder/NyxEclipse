@@ -17,6 +17,12 @@ import {
   getDashboardAuditLog,
   updateDashboardLogging,
   authenticateDashboardRequest,
+  createDashboardOAuthState,
+  consumeDashboardOAuthState,
+  exchangeDashboardOAuthCode,
+  getDashboardSession,
+  getSessionFromRequest,
+  destroyDashboardSession,
 } from './services/dashboardApiService.js';
 import { getServerCounters, saveServerCounters, updateCounter } from './services/serverstatsService.js';
 import { logger, startupLog, shutdownLog } from './utils/logger.js';
@@ -134,6 +140,7 @@ class NyxEclypse extends Client {
       
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin || '*');
+        res.header('Access-Control-Allow-Credentials', 'true');
       }
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -173,9 +180,49 @@ class NyxEclypse extends Client {
       return auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
     };
 
+    const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'https://niterayder.github.io/GuildNexus-WebDashboard';
+    const DASHBOARD_REDIRECT_URI = process.env.DASHBOARD_OAUTH_REDIRECT_URI || 'https://nyxeclipse.apps.bot-hosting.cloud/api/auth/discord/callback';
+
+    app.get('/api/auth/discord', (req, res) => {
+      const state = createDashboardOAuthState();
+      const params = new URLSearchParams({
+        client_id: process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: DASHBOARD_REDIRECT_URI,
+        scope: 'identify guilds',
+        state,
+      });
+      res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
+    });
+
+    app.get('/api/auth/discord/callback', async (req, res) => {
+      try {
+        if (!consumeDashboardOAuthState(req.query.state)) return res.status(400).send('Invalid or expired OAuth state.');
+        const sessionId = await exchangeDashboardOAuthCode(req.query.code, DASHBOARD_REDIRECT_URI);
+        res.cookie?.('gn_session', sessionId, { httpOnly:true, secure:true, sameSite:'none', maxAge:7*24*60*60*1000, path:'/' });
+        if (!res.headersSent) res.setHeader('Set-Cookie', `gn_session=${encodeURIComponent(sessionId)}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=None`);
+        res.redirect(DASHBOARD_ORIGIN + '/');
+      } catch (error) { res.status(error.statusCode || 500).send(error.message || 'Discord OAuth failed.'); }
+    });
+
+    app.get('/api/auth/session', (req, res) => {
+      try { const session = getDashboardSession(getSessionFromRequest(req)); res.json({ user: session.user }); }
+      catch (error) { res.status(error.statusCode || 401).json({ error:error.message }); }
+    });
+
+    app.post('/api/auth/logout', (req, res) => {
+      destroyDashboardSession(getSessionFromRequest(req));
+      res.setHeader('Set-Cookie', 'gn_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None');
+      res.json({ ok:true });
+    });
+
     const dashboardAuth = async (req, res, next) => {
       try {
         req.dashboardToken = getBearerToken(req);
+        if (!req.dashboardToken) {
+          const session = getDashboardSession(getSessionFromRequest(req));
+          req.dashboardToken = session.accessToken;
+        }
         req.dashboardAuth = await authenticateDashboardRequest(req.dashboardToken);
         next();
       } catch (error) {
