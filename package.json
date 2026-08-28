@@ -1,11 +1,11 @@
 {
-  "name": "titanbot",
+  "name": "nyxeclipse",
   "version": "2.1.0",
-  "description": "Modular Ultimate Community Bot by Touchpoint Support",
+  "description": "NyxEclypse Discord community bot",
   "main": "src/app.js",
   "type": "module",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "node --max-old-space-size=64 src/app.js",
     "migrate": "node scripts/migrate.js apply",
     "migrate:check": "node scripts/migrate.js check",
     "migrate:status": "node scripts/migrate.js status",
