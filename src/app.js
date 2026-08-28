@@ -14,6 +14,8 @@ import {
   getDashboardCases,
   getDashboardResources,
   getDashboardMember,
+  getDashboardAuditLog,
+  updateDashboardLogging,
   authenticateDashboardRequest,
 } from './services/dashboardApiService.js';
 import { getServerCounters, saveServerCounters, updateCounter } from './services/serverstatsService.js';
@@ -216,6 +218,16 @@ class NyxEclypse extends Client {
       } catch (error) {
         res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load moderation cases.' });
       }
+    });
+
+    app.get('/api/dashboard/guilds/:guildId/audit-log', dashboardAuth, async (req, res) => {
+      try { res.json(await getDashboardAuditLog(client, req.dashboardToken, req.params.guildId, req.query)); }
+      catch (error) { res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load audit log.' }); }
+    });
+
+    app.patch('/api/dashboard/guilds/:guildId/logging', dashboardAuth, express.json({ limit: '64kb' }), async (req, res) => {
+      try { res.json({ logging: await updateDashboardLogging(client, req.dashboardToken, req.params.guildId, req.body) }); }
+      catch (error) { res.status(error.statusCode || 500).json({ error: error.message || 'Failed to update logging.' }); }
     });
 
     app.get('/api/dashboard/guilds/:guildId/members/:userId', dashboardAuth, async (req, res) => {
