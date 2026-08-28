@@ -25,14 +25,6 @@ import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/database/schemaVersion.js';
-import {
-  createDiscordAuthorizationUrl,
-  completeDiscordCallback,
-  getDiscordSession,
-  destroyDiscordSession,
-  getUserGuilds,
-  getDashboardCallbackUrl,
-} from './services/oauth/index.js';
 
 class NyxEclypse extends Client {
   constructor() {
