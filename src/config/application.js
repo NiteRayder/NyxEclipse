@@ -60,8 +60,8 @@ const appConfig = {
   api: {
     port: process.env.PORT || 3000,
     cors: {
-      origin: process.env.CORS_ORIGIN?.split(",") || "*",
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      origin: process.env.CORS_ORIGIN?.split(",") || ["https://niterayder.github.io"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     },
     rateLimit: {
