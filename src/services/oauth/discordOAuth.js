@@ -176,7 +176,7 @@ export async function getUserGuilds(sessionToken) {
 
 export function getDashboardCallbackUrl(sessionToken) {
   const { dashboardUrl } = getOAuthConfig();
-  const url = new URL('/auth/callback', dashboardUrl);
+  const url = new URL('/GuildNexus-WebDashboard/pages/invite.html', dashboardUrl);
   url.searchParams.set('session', sessionToken);
   return url.toString();
 }
