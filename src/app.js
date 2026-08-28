@@ -119,6 +119,7 @@ class NyxEclypse extends Client {
 
   startWebServer() {
     const app = express();
+    const client = this;
     const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
@@ -203,7 +204,7 @@ class NyxEclypse extends Client {
           const permissions = BigInt(guild.permissions || '0');
           return guild.owner === true || (permissions & 0x20n) === 0x20n;
         });
-        return res.json({ guilds: manageableGuilds.map((guild) => ({ id: guild.id, name: guild.name, icon: guild.icon, owner: guild.owner === true, permissions: guild.permissions, botPresent: this.guilds.cache.has(guild.id) })) });
+        return res.json({ guilds: manageableGuilds.map((guild) => ({ id: guild.id, name: guild.name, icon: guild.icon, owner: guild.owner === true, permissions: guild.permissions, botPresent: client.guilds.cache.has(guild.id) })) });
       } catch (error) {
         logger.error('Failed to retrieve dashboard guilds:', error);
         return res.status(error.statusCode || 500).json({ error: error.statusCode === 401 ? error.message : 'Failed to retrieve Discord servers.' });
