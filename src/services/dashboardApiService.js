@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { PermissionFlagsBits } from 'discord.js';
 import { getGuildConfig, patchGuildConfig } from './config/guildConfig.js';
 import { getModerationCases } from '../utils/moderation.js';
@@ -6,7 +7,18 @@ import { getLoggingStatus, setLogChannel, setLoggingEnabled, toggleEventLogging 
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const authCache = new Map();
+const dashboardSessions = new Map();
+const oauthStates = new Map();
 const CACHE_TTL = 60_000;
+const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+
+function randomToken(bytes = 32) {
+  return Buffer.from(crypto.randomBytes(bytes)).toString('base64url');
+}
+
+function parseCookies(header = '') {
+  return Object.fromEntries(header.split(';').map(v => v.trim()).filter(Boolean).map(v => { const i=v.indexOf('='); return i<0?[v,'']:[v.slice(0,i),decodeURIComponent(v.slice(i+1))]; }));
+}
 
 function unauthorized(message = 'Dashboard authentication required.') {
   const error = new Error(message);
@@ -260,4 +272,70 @@ export async function updateDashboardLogging(client, accessToken, guildId, patch
     }
   }
   return getLoggingStatus(client, guildId);
+}
+
+
+export function createDashboardOAuthState() {
+  const state = randomToken(24);
+  oauthStates.set(state, { createdAt: Date.now() });
+  return state;
+}
+
+export function consumeDashboardOAuthState(state) {
+  const item = oauthStates.get(state);
+  oauthStates.delete(state);
+  if (!item || Date.now() - item.createdAt > 10 * 60 * 1000) return false;
+  return true;
+}
+
+export async function exchangeDashboardOAuthCode(code, redirectUri) {
+  if (!code) throw unauthorized('OAuth authorization code missing.');
+  const clientId = process.env.CLIENT_ID || process.env.DISCORD_CLIENT_ID;
+  const clientSecret = process.env.DISCORD_CLIENT_SECRET || process.env.CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    const error = new Error('Discord OAuth is not configured on NyxEclypse.');
+    error.statusCode = 503;
+    throw error;
+  }
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri,
+  });
+  const response = await fetch(`${DISCORD_API}/oauth2/token`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/x-www-form-urlencoded'},
+    body,
+  });
+  if (!response.ok) {
+    const error = new Error('Discord OAuth token exchange failed.');
+    error.statusCode = 401;
+    throw error;
+  }
+  const token = await response.json();
+  const user = await discordRequest('/users/@me', token.access_token);
+  const guilds = await discordRequest('/users/@me/guilds', token.access_token);
+  const sessionId = randomToken(32);
+  dashboardSessions.set(sessionId, { accessToken: token.access_token, refreshToken: token.refresh_token, user, guilds, expiresAt: Date.now() + Math.min((token.expires_in || 604800) * 1000, SESSION_TTL) });
+  if (dashboardSessions.size > 1000) {
+    const oldest = dashboardSessions.keys().next().value;
+    dashboardSessions.delete(oldest);
+  }
+  return sessionId;
+}
+
+export function getDashboardSession(sessionId) {
+  const session = dashboardSessions.get(sessionId);
+  if (!session) throw unauthorized('Dashboard session expired. Please connect Discord again.');
+  if (session.expiresAt <= Date.now()) { dashboardSessions.delete(sessionId); throw unauthorized('Dashboard session expired. Please connect Discord again.'); }
+  return session;
+}
+
+export function destroyDashboardSession(sessionId) { if (sessionId) dashboardSessions.delete(sessionId); }
+
+export function getSessionFromRequest(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  return cookies.gn_session || null;
 }
