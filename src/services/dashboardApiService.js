@@ -1,7 +1,7 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { getGuildConfig, patchGuildConfig } from './config/guildConfig.js';
 import { getModerationCases } from '../utils/moderation.js';
-import { getGuildCounterStats, getServerCounters } from './serverstatsService.js';
+import { getServerCounters } from './serverstatsService.js';
 import { getLoggingStatus } from './loggingService.js';
 
 const DISCORD_API = 'https://discord.com/api/v10';
@@ -105,7 +105,7 @@ export async function getDashboardGuild(client, accessToken, guildId) {
   const { guild } = await authorizeGuild(client, accessToken, guildId);
   const [config, stats, counters, logging] = await Promise.all([
     getGuildConfig(client, guildId),
-    getGuildCounterStats(guild),
+    Promise.resolve(null),
     getServerCounters(client, guildId),
     getLoggingStatus(client, guildId),
   ]);
@@ -115,9 +115,9 @@ export async function getDashboardGuild(client, accessToken, guildId) {
     name: guild.name,
     icon: guild.icon,
     ownerId: guild.ownerId,
-    memberCount: guild.memberCount ?? stats.totalCount,
-    botCount: stats.botCount,
-    humanCount: stats.humanCount,
+    memberCount: guild.memberCount ?? guild.members.cache.size,
+    botCount: guild.members.cache.filter((member) => member.user?.bot).size,
+    humanCount: Math.max((guild.memberCount ?? guild.members.cache.size) - guild.members.cache.filter((member) => member.user?.bot).size, 0),
     channels: guild.channels.cache.size,
     roles: guild.roles.cache.size,
     config,
