@@ -7,6 +7,14 @@ import cron from 'node-cron';
 import config from './config/application.js';
 import { initializeDatabase } from './utils/database.js';
 import { getGuildConfig } from './services/config/guildConfig.js';
+import {
+  getDashboardGuilds,
+  getDashboardGuild,
+  updateDashboardGuildConfig,
+  getDashboardCases,
+  getDashboardResources,
+  authenticateDashboardRequest,
+} from './services/dashboardApiService.js';
 import { getServerCounters, saveServerCounters, updateCounter } from './services/serverstatsService.js';
 import { logger, startupLog, shutdownLog } from './utils/logger.js';
 import { checkBirthdays } from './services/birthdayService.js';
@@ -216,6 +224,66 @@ class NyxEclypse extends Client {
       const sessionToken = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
       destroyDiscordSession(sessionToken);
       return res.status(204).send();
+    });
+
+    const getBearerToken = (req) => {
+      const auth = req.headers.authorization || '';
+      return auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+    };
+
+    const dashboardAuth = async (req, res, next) => {
+      try {
+        req.dashboardToken = getBearerToken(req);
+        req.dashboardAuth = await authenticateDashboardRequest(req.dashboardToken);
+        next();
+      } catch (error) {
+        res.status(error.statusCode || 401).json({ error: error.message || 'Dashboard authentication failed.' });
+      }
+    };
+
+    app.get('/api/dashboard/me', dashboardAuth, (req, res) => {
+      res.json({ user: req.dashboardAuth.user });
+    });
+
+    app.get('/api/dashboard/guilds', dashboardAuth, async (req, res) => {
+      try {
+        res.json({ guilds: await getDashboardGuilds(client, req.dashboardToken) });
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load servers.' });
+      }
+    });
+
+    app.get('/api/dashboard/guilds/:guildId', dashboardAuth, async (req, res) => {
+      try {
+        res.json({ guild: await getDashboardGuild(client, req.dashboardToken, req.params.guildId) });
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load server.' });
+      }
+    });
+
+    app.patch('/api/dashboard/guilds/:guildId/config', dashboardAuth, express.json({ limit: '64kb' }), async (req, res) => {
+      try {
+        const config = await updateDashboardGuildConfig(client, req.dashboardToken, req.params.guildId, req.body);
+        res.json({ config });
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save server configuration.' });
+      }
+    });
+
+    app.get('/api/dashboard/guilds/:guildId/cases', dashboardAuth, async (req, res) => {
+      try {
+        res.json({ cases: await getDashboardCases(client, req.dashboardToken, req.params.guildId, req.query) });
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load moderation cases.' });
+      }
+    });
+
+    app.get('/api/dashboard/guilds/:guildId/resources', dashboardAuth, async (req, res) => {
+      try {
+        res.json(await getDashboardResources(client, req.dashboardToken, req.params.guildId));
+      } catch (error) {
+        res.status(error.statusCode || 500).json({ error: error.message || 'Failed to load server resources.' });
+      }
     });
 
     app.get('/health', (req, res) => {
