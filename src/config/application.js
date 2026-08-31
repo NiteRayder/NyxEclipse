@@ -58,7 +58,7 @@ const appConfig = {
   },
 
   api: {
-    port: process.env.PORT || 3000,
+    port: process.env.PORT || 26116,
     cors: {
       origin: process.env.CORS_ORIGIN?.split(",") || ["https://niterayder.github.io"],
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
