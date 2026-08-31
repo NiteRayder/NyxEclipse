@@ -205,8 +205,13 @@ class NyxEclypse extends Client {
     });
 
     app.get('/api/auth/session', (req, res) => {
-      try { const session = getDashboardSession(getSessionFromRequest(req)); res.json({ user: session.user }); }
-      catch (error) { res.status(error.statusCode || 401).json({ error:error.message }); }
+      try {
+        const bearer = getBearerToken(req);
+        const session = getDashboardSession(bearer || getSessionFromRequest(req));
+        res.json({ user: session.user, authenticated: true });
+      } catch (error) {
+        res.status(error.statusCode || 401).json({ error: error.message });
+      }
     });
 
     app.post('/api/auth/logout', (req, res) => {
