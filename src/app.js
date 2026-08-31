@@ -129,7 +129,7 @@ class NyxEclypse extends Client {
   startWebServer() {
     const app = express();
     const client = this;
-    const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
+    const configuredPort = Number(this.config.api?.port || process.env.PORT || 26116);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
     const corsOrigin = this.config.api?.cors?.origin || '*';
