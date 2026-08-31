@@ -181,6 +181,7 @@ class NyxEclypse extends Client {
     };
 
     const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'https://niterayder.github.io/GuildNexus-WebDashboard';
+    const DASHBOARD_INVITE_PAGE = process.env.DASHBOARD_INVITE_PAGE || `${DASHBOARD_ORIGIN}/pages/invite.html`;
     const DASHBOARD_REDIRECT_URI = process.env.DASHBOARD_OAUTH_REDIRECT_URI || 'https://nyxeclipse.apps.bot-hosting.cloud/api/auth/discord/callback';
 
     app.get('/api/auth/discord', (req, res) => {
@@ -201,7 +202,7 @@ class NyxEclypse extends Client {
         const sessionId = await exchangeDashboardOAuthCode(req.query.code, DASHBOARD_REDIRECT_URI);
         res.cookie?.('gn_session', sessionId, { httpOnly:true, secure:true, sameSite:'none', maxAge:7*24*60*60*1000, path:'/' });
         if (!res.headersSent) res.setHeader('Set-Cookie', `gn_session=${encodeURIComponent(sessionId)}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=None`);
-        res.redirect(`${DASHBOARD_ORIGIN}/#session=${encodeURIComponent(sessionId)}`);
+        res.redirect(`${DASHBOARD_INVITE_PAGE}#session=${encodeURIComponent(sessionId)}`);
       } catch (error) { res.status(error.statusCode || 500).send(error.message || 'Discord OAuth failed.'); }
     });
 
