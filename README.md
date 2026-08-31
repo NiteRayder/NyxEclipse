@@ -122,7 +122,7 @@ TitanBot is fully containerized for easy deployment.
 4. **Check status:**
    ```bash
    docker compose ps
-   curl http://localhost:3000/health
+   curl http://localhost:26116/health
    ```
 
 This starts the bot and PostgreSQL. The compose file sets `POSTGRES_SSL=false` and `AUTO_MIGRATE=true` for the bundled database. Music uses public Lavalink v4 nodes from `lavalink/nodes.json` by default.
@@ -206,11 +206,11 @@ docker pull ghcr.io/codebymitch/titanbot:main
    NODE_ENV=production
    LOG_LEVEL=warn
    WEB_HOST=0.0.0.0
-   PORT=3000
+   PORT=26116
    PORT_RETRY_ATTEMPTS=5
    ```
    This gives clear startup/online status messages while keeping logs simple for non-technical operators.
-   If port `3000` is busy, the bot tries the next available ports automatically (up to `PORT_RETRY_ATTEMPTS`).
+   If port `26116` is busy, the bot tries the next available ports automatically (up to `PORT_RETRY_ATTEMPTS`).
 
 ### Multiple servers
 
