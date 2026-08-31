@@ -21,15 +21,15 @@ services:
       - AUTO_MIGRATE=true
       - LOG_LEVEL=${LOG_LEVEL:-warn}
       - LAVALINK_NODES_FILE=lavalink/nodes.json
-      - PORT=3000
+      - PORT=26116
       - WEB_HOST=0.0.0.0
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-26116}:26116"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:26116/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
