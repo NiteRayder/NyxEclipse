@@ -200,7 +200,7 @@ class NyxEclypse extends Client {
         const sessionId = await exchangeDashboardOAuthCode(req.query.code, DASHBOARD_REDIRECT_URI);
         res.cookie?.('gn_session', sessionId, { httpOnly:true, secure:true, sameSite:'none', maxAge:7*24*60*60*1000, path:'/' });
         if (!res.headersSent) res.setHeader('Set-Cookie', `gn_session=${encodeURIComponent(sessionId)}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=None`);
-        res.redirect(DASHBOARD_ORIGIN + '/');
+        res.redirect(`${DASHBOARD_ORIGIN}/#session=${encodeURIComponent(sessionId)}`);
       } catch (error) { res.status(error.statusCode || 500).send(error.message || 'Discord OAuth failed.'); }
     });
 
