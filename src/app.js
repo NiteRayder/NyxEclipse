@@ -222,12 +222,27 @@ class NyxEclypse extends Client {
 
     const dashboardAuth = async (req, res, next) => {
       try {
-        req.dashboardToken = getBearerToken(req);
-        if (!req.dashboardToken) {
-          const session = getDashboardSession(getSessionFromRequest(req));
-          req.dashboardToken = session.accessToken;
+        const bearer = getBearerToken(req);
+        const sessionId = bearer || getSessionFromRequest(req);
+        let session = null;
+        try {
+          session = getDashboardSession(sessionId);
+        } catch {
+          session = null;
         }
-        req.dashboardAuth = await authenticateDashboardRequest(req.dashboardToken);
+
+        if (session) {
+          req.dashboardSession = session;
+          req.dashboardToken = session.accessToken;
+          req.dashboardAuth = {
+            user: session.user,
+            guilds: session.guilds,
+            expiresAt: session.expiresAt,
+          };
+        } else {
+          req.dashboardToken = bearer;
+          req.dashboardAuth = await authenticateDashboardRequest(req.dashboardToken);
+        }
         next();
       } catch (error) {
         res.status(error.statusCode || 401).json({ error: error.message || 'Dashboard authentication failed.' });
