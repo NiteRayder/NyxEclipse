@@ -58,9 +58,11 @@ const appConfig = {
   },
 
   api: {
-    port: process.env.PORT || 26116,
+    // Bot-Hosting exposes the primary application port through SERVER_PORT.
+    // PORT remains a fallback for local development and other hosts.
+    port: process.env.SERVER_PORT || process.env.PORT || 26116,
     cors: {
-      origin: process.env.CORS_ORIGIN?.split(",") || ["https://niterayder.github.io"],
+      origin: process.env.CORS_ORIGIN?.split(",") || ["https://guildnexus.brittanyburwell19.workers.dev"],
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     },
