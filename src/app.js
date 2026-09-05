@@ -39,18 +39,14 @@ class NyxEclypse extends Client {
   constructor() {
     super({
       intents: [
-        
-        GatewayIntentBits.Guilds,                        
-        GatewayIntentBits.GuildMembers,                 
-
-        GatewayIntentBits.GuildMessages,                
-        GatewayIntentBits.GuildMessageReactions,        
-        GatewayIntentBits.MessageContent,               
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
-
-        GatewayIntentBits.GuildVoiceStates,             
-
-        GatewayIntentBits.GuildBans,                    
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildBans,
       ],
     });
 
@@ -69,12 +65,11 @@ class NyxEclypse extends Client {
     try {
       startupLog('Starting NyxEclypse...');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       startupLog('Initializing database...');
       const dbInstance = await initializeDatabase();
       this.db = dbInstance.db;
 
-      // Check database status and report
       const dbStatus = this.db.getStatus();
       if (dbStatus.isDegraded) {
         logger.warn('');
@@ -89,28 +84,28 @@ class NyxEclypse extends Client {
       } else {
         startupLog(`✅ Database Status: ${dbStatus.connectionType} (fully operational)`);
       }
-      
+
       startupLog('Starting web server...');
       this.startWebServer();
-      
+
       startupLog('Loading commands...');
       await loadCommands(this);
       startupLog(`Commands loaded: ${this.commands.size}`);
-      
+
       startupLog('Loading handlers...');
       await this.loadHandlers();
       startupLog('Handlers loaded');
 
       initializeMusic(this);
-      
+
       startupLog('Logging into Discord...');
       await this.login(this.config.bot.token);
       startupLog('Discord login successful');
-      
+
       startupLog('Registering slash commands globally...');
       await this.registerCommands();
       startupLog('Slash commands registration complete');
-      
+
       const databaseMode = dbStatus.isDegraded
         ? 'Optional in-memory mode (data resets after restart)'
         : 'Connected (persistent data enabled)';
@@ -118,7 +113,7 @@ class NyxEclypse extends Client {
       startupLog(
         `ONLINE ✅ | ${this.commands.size} commands loaded | ${handlerSummary} | Database: ${databaseMode}`
       );
-      
+
       this.setupCronJobs();
     } catch (error) {
       logger.error('Failed to start bot:', error);
@@ -133,18 +128,18 @@ class NyxEclypse extends Client {
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
     const corsOrigin = this.config.api?.cors?.origin || '*';
-    
+
     app.use((req, res, next) => {
       const allowedOrigins = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
       const origin = req.headers.origin;
-      
+
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         res.header('Access-Control-Allow-Origin', origin || '*');
         res.header('Access-Control-Allow-Credentials', 'true');
       }
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      
+
       if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
       }
@@ -154,22 +149,22 @@ class NyxEclypse extends Client {
     const requestCounts = new Map();
     const windowMs = this.config.api?.rateLimit?.windowMs || 60000;
     const maxRequests = this.config.api?.rateLimit?.max || 100;
-    
+
     app.use((req, res, next) => {
       const ip = req.ip;
       const now = Date.now();
       const windowStart = now - windowMs;
-      
+
       if (!requestCounts.has(ip)) {
         requestCounts.set(ip, []);
       }
-      
+
       const times = requestCounts.get(ip).filter(t => t > windowStart);
-      
+
       if (times.length >= maxRequests) {
         return res.status(429).json({ error: 'Too many requests' });
       }
-      
+
       times.push(now);
       requestCounts.set(ip, times);
       next();
@@ -180,9 +175,9 @@ class NyxEclypse extends Client {
       return auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
     };
 
-    const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'https://niterayder.github.io/GuildNexus-WebDashboard';
-    const DASHBOARD_INVITE_PAGE = process.env.DASHBOARD_INVITE_PAGE || `${DASHBOARD_ORIGIN}/pages/invite.html`;
-    const DASHBOARD_REDIRECT_URI = process.env.DASHBOARD_OAUTH_REDIRECT_URI || 'https://nyxeclipse.apps.bot-hosting.cloud/api/auth/discord/callback';
+    const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'https://guildnexus.brittanyburwell19.workers.dev';
+    const DASHBOARD_INVITE_PAGE = process.env.DASHBOARD_INVITE_PAGE || `${DASHBOARD_ORIGIN}/pages/invite`;
+    const DASHBOARD_REDIRECT_URI = process.env.DASHBOARD_OAUTH_REDIRECT_URI || `${DASHBOARD_ORIGIN}/`;
 
     app.get('/api/auth/discord', (req, res) => {
       const state = createDashboardOAuthState();
@@ -198,12 +193,28 @@ class NyxEclypse extends Client {
 
     app.get('/api/auth/discord/callback', async (req, res) => {
       try {
-        if (!consumeDashboardOAuthState(req.query.state)) return res.status(400).send('Invalid or expired OAuth state.');
+        if (!consumeDashboardOAuthState(req.query.state)) {
+          return res.status(400).send('Invalid or expired OAuth state.');
+        }
+
         const sessionId = await exchangeDashboardOAuthCode(req.query.code, DASHBOARD_REDIRECT_URI);
-        res.cookie?.('gn_session', sessionId, { httpOnly:true, secure:true, sameSite:'none', maxAge:7*24*60*60*1000, path:'/' });
-        if (!res.headersSent) res.setHeader('Set-Cookie', `gn_session=${encodeURIComponent(sessionId)}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=None`);
+        res.cookie?.('gn_session', sessionId, {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          maxAge: 7 * 24 * 60 * 60 * 1000,
+          path: '/',
+        });
+        if (!res.headersSent) {
+          res.setHeader('Set-Cookie', `gn_session=${encodeURIComponent(sessionId)}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=None`);
+        }
+
+        // Browser-side OAuth handling reads this redirect's fragment so the
+        // session identifier never appears in the HTTP request URL.
         res.redirect(`${DASHBOARD_INVITE_PAGE}#session=${encodeURIComponent(sessionId)}`);
-      } catch (error) { res.status(error.statusCode || 500).send(error.message || 'Discord OAuth failed.'); }
+      } catch (error) {
+        res.status(error.statusCode || 500).send(error.message || 'Discord OAuth failed.');
+      }
     });
 
     app.get('/api/auth/session', (req, res) => {
@@ -219,7 +230,7 @@ class NyxEclypse extends Client {
     app.post('/api/auth/logout', (req, res) => {
       destroyDashboardSession(getSessionFromRequest(req));
       res.setHeader('Set-Cookie', 'gn_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None');
-      res.json({ ok:true });
+      res.json({ ok: true });
     });
 
     const dashboardAuth = async (req, res, next) => {
@@ -361,7 +372,7 @@ class NyxEclypse extends Client {
     });
 
     app.get('/', (req, res) => {
-      res.status(200).json({ 
+      res.status(200).json({
         message: 'NyxEclypse System Online',
         version: pkg.version,
         timestamp: new Date().toISOString()
@@ -416,13 +427,13 @@ class NyxEclypse extends Client {
       logger.warn('Database not available for counter updates');
       return;
     }
-    
+
     for (const [guildId, guild] of this.guilds.cache) {
       try {
         const counters = await getServerCounters(this, guildId);
         const validCounters = [];
         const orphanedCounters = [];
-        
+
         for (const counter of counters) {
           if (counter && counter.type && counter.channelId && counter.enabled !== false) {
             const channel = guild.channels.cache.get(counter.channelId);
@@ -435,9 +446,7 @@ class NyxEclypse extends Client {
             }
           }
         }
-        
-        // Save cleaned counters if any were orphaned
-        // Save cleaned counters if any were orphaned
+
         if (orphanedCounters.length > 0) {
           await saveServerCounters(this, guildId, validCounters);
           logger.info(`Cleaned up ${orphanedCounters.length} orphaned counter(s) from guild ${guildId} during scheduled update`);
@@ -495,7 +504,6 @@ class NyxEclypse extends Client {
     logger.info(`${'='.repeat(60)}`);
 
     try {
-      
       logger.info('Stopping cron jobs...');
       cron.getTasks().forEach(task => task.stop());
       logger.info('✅ Cron jobs stopped');
@@ -510,8 +518,6 @@ class NyxEclypse extends Client {
         logger.info('✅ Web server closed');
       }
 
-      // Close database connection
-      // Close database connection
       if (this.db && this.db.db) {
         logger.info('Closing database connection...');
         try {
@@ -530,13 +536,12 @@ class NyxEclypse extends Client {
           this.destroy();
           logger.info('✅ Discord client destroyed');
         } catch (error) {
-
           logger.warn('Discord client destroy warning (non-critical):', error.message);
         }
       }
 
       logger.info('✅ Graceful shutdown complete');
-  shutdownLog('Bot stopped successfully.');
+      shutdownLog('Bot stopped successfully.');
       process.exit(0);
     } catch (error) {
       logger.error('Error during graceful shutdown:', error);
@@ -547,13 +552,12 @@ class NyxEclypse extends Client {
 
 try {
   const bot = new NyxEclypse();
-  
+
   const setupShutdown = () => {
     process.on('SIGTERM', () => bot.shutdown('SIGTERM'));
     process.on('SIGINT', () => bot.shutdown('SIGINT'));
-    
+
     process.on('uncaughtException', (error) => {
-      // Process state may be corrupt after an uncaught throw; log and shut down cleanly.
       handleTaskError('uncaught_exception', error, { fatal: true });
       bot.shutdown('UNCAUGHT_EXCEPTION');
     });
@@ -568,14 +572,12 @@ try {
         return;
       }
 
-      // A stray rejection is a bug to fix, not a reason to take the bot down.
-      // Log loudly with full context; the central task handler categorizes it.
       handleTaskError('unhandled_rejection', reason instanceof Error ? reason : new Error(String(reason)), {
         errorCode: ErrorCodes.UNHANDLED_REJECTION,
       });
     });
   };
-  
+
   setupShutdown();
   bot.start().catch((error) => {
     logger.error('Fatal error during bot startup:', error);
