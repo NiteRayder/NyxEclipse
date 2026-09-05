@@ -177,7 +177,7 @@ class NyxEclypse extends Client {
 
     const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'https://guildnexus.brittanyburwell19.workers.dev';
     const DASHBOARD_INVITE_PAGE = process.env.DASHBOARD_INVITE_PAGE || `${DASHBOARD_ORIGIN}/pages/invite`;
-    const DASHBOARD_REDIRECT_URI = process.env.DASHBOARD_OAUTH_REDIRECT_URI || `${DASHBOARD_ORIGIN}/`;
+    const DASHBOARD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || process.env.DASHBOARD_OAUTH_REDIRECT_URI || `${DASHBOARD_ORIGIN}/api/auth/discord/callback`;
 
     app.get('/api/auth/discord', (req, res) => {
       const state = createDashboardOAuthState();
@@ -390,202 +390,71 @@ class NyxEclypse extends Client {
       });
 
       server.on('error', (error) => {
-        const errorCode = error?.code || 'UNKNOWN_ERROR';
-        const errorMessage = error?.message || 'Unknown server error';
-
-        if (!hasStartedListening && errorCode === 'EADDRINUSE' && attempt < maxPortRetryAttempts) {
+        const errorCode = error?.code || 'UNKNOWN';
+        if (errorCode === 'EADDRINUSE' && attempt < maxPortRetryAttempts) {
           const nextPort = port + 1;
-          startupLog(`Port ${port} is already in use. Trying port ${nextPort}...`);
-          setTimeout(() => startServer(nextPort, attempt + 1), 250);
+          logger.warn(`Port ${port} is already in use. Retrying on ${nextPort} (${attempt + 1}/${maxPortRetryAttempts}).`);
+          server.close(() => startServer(nextPort, attempt + 1));
           return;
         }
-
-        if (hasStartedListening && errorCode === 'EADDRINUSE') {
-          logger.warn(`Web server reported a duplicate bind warning on ${host}:${port}, but the bot remains online.`);
-          return;
-        }
-
-        logger.error(`❌ Web server error on port ${port} (${errorCode}): ${errorMessage}`);
-
         if (!hasStartedListening) {
-          process.exit(1);
+          logger.error(`Web server failed to start on ${host}:${port}:`, error);
+          return;
         }
+        logger.error('Web server error:', error);
       });
     };
 
-    startServer(configuredPort, 0);
-  }
-
-  setupCronJobs() {
-    cron.schedule('0 6 * * *', runSafeTask('birthday_check', () => checkBirthdays(this)));
-    cron.schedule('* * * * *', runSafeTask('giveaway_check', () => checkGiveaways(this)));
-    cron.schedule('*/15 * * * *', runSafeTask('counter_update', () => this.updateAllCounters()));
-  }
-
-  async updateAllCounters() {
-    if (!this.db) {
-      logger.warn('Database not available for counter updates');
-      return;
-    }
-
-    for (const [guildId, guild] of this.guilds.cache) {
-      try {
-        const counters = await getServerCounters(this, guildId);
-        const validCounters = [];
-        const orphanedCounters = [];
-
-        for (const counter of counters) {
-          if (counter && counter.type && counter.channelId && counter.enabled !== false) {
-            const channel = guild.channels.cache.get(counter.channelId);
-            if (channel) {
-              validCounters.push(counter);
-              await updateCounter(this, guild, counter);
-            } else {
-              orphanedCounters.push(counter);
-              logger.info(`Removing orphaned counter ${counter.id} (type: ${counter.type}, deleted channel: ${counter.channelId}) from guild ${guildId}`);
-            }
-          }
-        }
-
-        if (orphanedCounters.length > 0) {
-          await saveServerCounters(this, guildId, validCounters);
-          logger.info(`Cleaned up ${orphanedCounters.length} orphaned counter(s) from guild ${guildId} during scheduled update`);
-        }
-      } catch (error) {
-        logger.error(`Error updating counters for guild ${guildId}:`, error);
-      }
-    }
+    startServer(configuredPort);
   }
 
   async loadHandlers() {
-    startupLog('Loading handlers...');
-    const handlers = [
-      { path: 'events', type: 'default', required: true },
-      { path: 'interactions', type: 'default', required: true }
-    ];
-
-    for (const handler of handlers) {
-      try {
-        startupLog(`Loading handler: ${handler.path}`);
-        const module = await import(`./handlers/loaders/${handler.path}.js`);
-        const loaderFn = handler.type.startsWith('named:')
-          ? module[handler.type.split(':')[1]]
-          : module.default;
-
-        if (typeof loaderFn === 'function') {
-          await loaderFn(this);
-          startupLog(`✅ Loaded ${handler.path}`);
-        } else {
-          throw new Error(`Invalid loader export from ${handler.path}`);
-        }
-      } catch (error) {
-        if (handler.required) {
-          logger.error(`❌ Failed to load required handler ${handler.path}:`, error.message);
-          throw error;
-        } else if (error.code !== 'MODULE_NOT_FOUND') {
-          logger.warn(`⚠️  Failed to load optional handler ${handler.path}:`, error.message);
-        }
-      }
-    }
+    const { loadEventHandlers } = await import('./handlers/eventHandler.js');
+    await loadEventHandlers(this);
   }
 
   async registerCommands() {
-    try {
-      await registerSlashCommands(this, { clientId: this.config.bot.clientId });
-    } catch (error) {
-      logger.error('Error registering commands:', error);
-    }
+    await registerSlashCommands(this);
   }
 
-  async shutdown(reason = 'UNKNOWN') {
-    shutdownLog(`Bot is shutting down (${reason})...`);
-    logger.info(`\n${'='.repeat(60)}`);
-    logger.info(`🛑 Graceful Shutdown Initiated (${reason})`);
-    logger.info(`${'='.repeat(60)}`);
+  setupCronJobs() {
+    cron.schedule('0 0 * * *', () => runSafeTask('birthday-check', () => checkBirthdays(this), handleTaskError));
+    cron.schedule('*/5 * * * *', () => runSafeTask('giveaway-check', () => checkGiveaways(this), handleTaskError));
+  }
 
+  async shutdown() {
     try {
-      logger.info('Stopping cron jobs...');
-      cron.getTasks().forEach(task => task.stop());
-      logger.info('✅ Cron jobs stopped');
-
-      logger.info('Stopping music players...');
-      await shutdownMusic(this);
-      logger.info('✅ Music players stopped');
-
+      shutdownLog('Shutting down NyxEclypse...');
+      shutdownMusic(this);
       if (this.webServer) {
-        logger.info('Closing web server...');
-        await new Promise((resolve) => this.webServer.close(resolve));
-        logger.info('✅ Web server closed');
+        await new Promise(resolve => this.webServer.close(resolve));
       }
-
-      if (this.db && this.db.db) {
-        logger.info('Closing database connection...');
-        try {
-          if (this.db.db.pool) {
-            await this.db.db.pool.end();
-            logger.info('✅ Database connection closed');
-          }
-        } catch (error) {
-          logger.warn('Error closing database pool:', error.message);
-        }
-      }
-
-      logger.info('Destroying Discord client...');
-      if (this.isReady()) {
-        try {
-          this.destroy();
-          logger.info('✅ Discord client destroyed');
-        } catch (error) {
-          logger.warn('Discord client destroy warning (non-critical):', error.message);
-        }
-      }
-
-      logger.info('✅ Graceful shutdown complete');
-      shutdownLog('Bot stopped successfully.');
-      process.exit(0);
+      this.destroy();
+      shutdownLog('NyxEclypse shutdown complete');
     } catch (error) {
-      logger.error('Error during graceful shutdown:', error);
-      process.exit(1);
+      logger.error('Error during shutdown:', error);
     }
   }
 }
 
-try {
-  const bot = new NyxEclypse();
+const client = new NyxEclypse();
 
-  const setupShutdown = () => {
-    process.on('SIGTERM', () => bot.shutdown('SIGTERM'));
-    process.on('SIGINT', () => bot.shutdown('SIGINT'));
+process.on('SIGINT', async () => {
+  await client.shutdown();
+  process.exit(0);
+});
 
-    process.on('uncaughtException', (error) => {
-      handleTaskError('uncaught_exception', error, { fatal: true });
-      bot.shutdown('UNCAUGHT_EXCEPTION');
-    });
+process.on('SIGTERM', async () => {
+  await client.shutdown();
+  process.exit(0);
+});
 
-    process.on('unhandledRejection', (reason) => {
-      const code = reason?.code;
-      if (code === 10062 || code === 40060 || code === 50027) {
-        logger.warn('Recoverable Discord interaction rejection:', reason?.message || reason);
-        return;
-      }
-      if (reason?.message?.includes('Queue is empty')) {
-        return;
-      }
+process.on('unhandledRejection', (error) => {
+  logger.error('Unhandled promise rejection:', error);
+});
 
-      handleTaskError('unhandled_rejection', reason instanceof Error ? reason : new Error(String(reason)), {
-        errorCode: ErrorCodes.UNHANDLED_REJECTION,
-      });
-    });
-  };
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+});
 
-  setupShutdown();
-  bot.start().catch((error) => {
-    logger.error('Fatal error during bot startup:', error);
-    bot.shutdown('STARTUP_ERROR');
-  });
-} catch (error) {
-  logger.error('Fatal error during bot startup:', error);
-  process.exit(1);
-}
-
-export default NyxEclypse;
+client.start();
