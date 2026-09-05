@@ -10,7 +10,6 @@ const appConfig = {
   paths: {
     root: path.join(__dirname, "../.."),
     commands: path.join(__dirname, "../commands"),
-    events: path.join(__dirname, "../events"),
     config: __dirname,
     utils: path.join(__dirname, "../utils"),
     services: path.join(__dirname, "../services"),
@@ -59,8 +58,9 @@ const appConfig = {
 
   api: {
     // Bot-Hosting exposes the primary application port through SERVER_PORT.
-    // PORT remains a fallback for local development and other hosts.
-    port: process.env.SERVER_PORT || process.env.PORT || 26116,
+    // Do not fall back to the platform's generic PORT variable because it can
+    // point to an unrelated internal port (for example, 3000).
+    port: process.env.SERVER_PORT || 26116,
     cors: {
       origin: process.env.CORS_ORIGIN?.split(",") || ["https://guildnexus.brittanyburwell19.workers.dev"],
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
