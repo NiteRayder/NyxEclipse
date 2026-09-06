@@ -4,6 +4,7 @@ import { getGuildConfig, patchGuildConfig } from './config/guildConfig.js';
 import { getModerationCases } from '../utils/moderation.js';
 import { getServerCounters } from './serverstatsService.js';
 import { getLoggingStatus, setLogChannel, setLoggingEnabled, toggleEventLogging } from './loggingService.js';
+import { getGuildNexusTelemetry, getGuildNexusGuildSnapshot } from './guildNexusIntegration.js';
 
 const DISCORD_API = 'https://discord.com/api/v10';
 const authCache = new Map();
@@ -122,19 +123,17 @@ export async function getDashboardGuild(client, accessToken, guildId) {
   ]);
 
   return {
-    id: guild.id,
-    name: guild.name,
-    icon: guild.icon,
+    ...getGuildNexusGuildSnapshot(client, guild),
     ownerId: guild.ownerId,
-    memberCount: guild.memberCount ?? guild.members.cache.size,
-    botCount: guild.members.cache.filter((member) => member.user?.bot).size,
-    humanCount: Math.max((guild.memberCount ?? guild.members.cache.size) - guild.members.cache.filter((member) => member.user?.bot).size, 0),
-    channels: guild.channels.cache.size,
-    roles: guild.roles.cache.size,
     config,
     counters,
     logging,
+    bot: getGuildNexusTelemetry(client),
   };
+}
+
+export function getDashboardBotTelemetry(client) {
+  return getGuildNexusTelemetry(client);
 }
 
 export async function updateDashboardGuildConfig(client, accessToken, guildId, patch) {
@@ -273,7 +272,6 @@ export async function updateDashboardLogging(client, accessToken, guildId, patch
   }
   return getLoggingStatus(client, guildId);
 }
-
 
 export function createDashboardOAuthState() {
   const state = randomToken(24);
