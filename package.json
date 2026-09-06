@@ -1,7 +1,7 @@
 {
   "name": "nyxeclipse",
   "version": "2.1.0",
-  "description": "NyxEclypse Discord community bot",
+  "description": "NyxEclipse Discord community bot",
   "main": "src/app.js",
   "type": "module",
   "scripts": {
