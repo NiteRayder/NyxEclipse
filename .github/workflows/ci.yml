@@ -1,0 +1,101 @@
+name: NyxEclipse CI
+
+on:
+  push:
+    branches: [nyxeclipse-main]
+  pull_request:
+    branches: [nyxeclipse-main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          find src scripts -type f -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+
+      - name: Validate command modules
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import { fileURLToPath, pathToFileURL } from 'node:url';
+
+          const root = path.resolve(process.cwd(), 'src/commands');
+          const files = [];
+
+          async function walk(dir) {
+            for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                if (entry.name !== 'modules') await walk(full);
+              } else if (entry.name.endsWith('.js')) {
+                files.push(full);
+              }
+            }
+          }
+
+          await walk(root);
+
+          const names = new Map();
+          const failures = [];
+
+          for (const file of files) {
+            try {
+              const mod = await import(`${pathToFileURL(file).href}?ci=${Date.now()}`);
+              const command = mod.default ?? mod;
+              if (!command?.data || typeof command.execute !== 'function') {
+                failures.push(`${file}: missing command data or execute()`);
+                continue;
+              }
+
+              const json = command.data.toJSON();
+              if (!json.name || !json.description) {
+                failures.push(`${file}: command name/description is missing`);
+              }
+              if (json.name && json.name.length > 32) {
+                failures.push(`${file}: command name exceeds 32 characters`);
+              }
+              if (json.description && json.description.length > 100) {
+                failures.push(`${file}: command description exceeds 100 characters`);
+              }
+              if (names.has(json.name)) {
+                failures.push(`${file}: duplicate command name '${json.name}' also used by ${names.get(json.name)}`);
+              } else {
+                names.set(json.name, file);
+              }
+            } catch (error) {
+              failures.push(`${file}: ${error?.stack || error}`);
+            }
+          }
+
+          if (failures.length) {
+            console.error(failures.join('\n'));
+            process.exit(1);
+          }
+
+          if (names.size > 100) {
+            console.error(`Loaded ${names.size} top-level commands, exceeding Discord's global limit of 100.`);
+            process.exit(1);
+          }
+
+          console.log(`Validated ${names.size} unique top-level commands from ${files.length} command files.`);
+          NODE
