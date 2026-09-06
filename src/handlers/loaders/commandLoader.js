@@ -9,35 +9,36 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const MAX_COMMANDS = 100;
 const COMMAND_COUNT_WARN_THRESHOLD = 90;
+const MAX_DESCRIPTION_LENGTH = 100;
+const MAX_CHOICE_NAME_LENGTH = 100;
+const MAX_CHOICE_VALUE_LENGTH = 100;
 
 function getSubcommandInfo(commandData) {
     const subcommands = [];
-    
+
     if (commandData.options) {
         for (const option of commandData.options) {
-if (option.type === 1) {
+            if (option.type === 1) {
                 subcommands.push(option.name);
-} else if (option.type === 2) {
-                if (option.options) {
-                    for (const subOption of option.options) {
-if (subOption.type === 1) {
-                            subcommands.push(`${option.name}/${subOption.name}`);
-                        }
+            } else if (option.type === 2 && option.options) {
+                for (const subOption of option.options) {
+                    if (subOption.type === 1) {
+                        subcommands.push(`${option.name}/${subOption.name}`);
                     }
                 }
             }
         }
     }
-    
+
     return subcommands;
 }
 
 async function getAllFiles(directory, fileList = []) {
     const files = await fs.readdir(directory, { withFileTypes: true });
-    
+
     for (const file of files) {
         const filePath = path.join(directory, file.name);
-        
+
         if (file.isDirectory()) {
             if (file.name === 'modules') {
                 continue;
@@ -47,7 +48,7 @@ async function getAllFiles(directory, fileList = []) {
             fileList.push(filePath);
         }
     }
-    
+
     return fileList;
 }
 
@@ -55,67 +56,52 @@ export async function loadCommands(client) {
     client.commands = new Collection();
     const commandsPath = path.join(__dirname, '../../commands');
     const commandFiles = await getAllFiles(commandsPath);
-    
+
     logger.info(`Found ${commandFiles.length} command files to load`);
-    
+
     const uniqueCommandNames = new Set();
-    
+
     for (const filePath of commandFiles) {
         try {
             const normalizedPath = filePath.replace(/\\/g, '/');
-            
             const commandName = path.basename(filePath, '.js');
             const commandDir = path.dirname(filePath);
             const category = path.basename(commandDir);
-            
+
             const commandModule = await import(`file://${filePath}`);
             const command = commandModule.default || commandModule;
-            
+
             if (!command.data || !command.execute) {
                 logger.warn(`Command at ${filePath} is missing required "data" or "execute" property.`);
                 continue;
             }
-            
+
             command.category = category;
             command.filePath = normalizedPath;
-            
+
             const primaryCommandName = command.data.name;
-            
+
             if (!uniqueCommandNames.has(primaryCommandName)) {
                 uniqueCommandNames.add(primaryCommandName);
-                
                 client.commands.set(primaryCommandName, command);
+            } else {
+                logger.warn(`Duplicate command name "${primaryCommandName}" found at ${filePath}; skipping duplicate.`);
+                continue;
             }
-            
+
             const subcommands = getSubcommandInfo(command.data.toJSON());
-            
+
             logger.info(`Loaded command: ${primaryCommandName} from ${normalizedPath} (category: ${category})`);
-            
+
             if (subcommands.length > 0) {
                 logger.info(`  - Subcommands: ${subcommands.join(', ')}`);
             }
-            
         } catch (error) {
             logger.error(`Error loading command from ${filePath}:`, error);
         }
     }
-    
-    const commandsWithSubcommands = Array.from(client.commands.values()).filter(cmd => {
-        const subcommands = getSubcommandInfo(cmd.data.toJSON());
-        return subcommands.length > 0;
-    });
-    
-    const totalSubcommands = commandsWithSubcommands.reduce((total, cmd) => {
-        return total + getSubcommandInfo(cmd.data.toJSON()).length;
-    }, 0);
-    
-    const uniqueCommands = new Set();
-    for (const [name, command] of client.commands.entries()) {
-        if (command.data && command.data.name) {
-            uniqueCommands.add(command.data.name);
-        }
-    }
-    
+
+    const uniqueCommands = new Set(client.commands.keys());
     logger.info(`Loaded ${uniqueCommands.size} commands`);
     return client.commands;
 }
@@ -143,73 +129,62 @@ function collectCommandPayloads(client) {
         const commandJson = command.data.toJSON();
         commands.push(commandJson);
         totalSubcommands += getSubcommandInfo(commandJson).length;
-
-        if (process.env.NODE_ENV !== 'production') {
-            logger.debug(`Registering command: ${commandName}`);
-        }
     }
 
     return { commands, totalSubcommands };
+}
+
+function validateChoice(choice, commandName, optionPath, validationErrors) {
+    if (typeof choice.name === 'string' && choice.name.length > MAX_CHOICE_NAME_LENGTH) {
+        validationErrors.push(
+            `Command ${commandName} ${optionPath} choice ${choice.name} has a name longer than ${MAX_CHOICE_NAME_LENGTH} chars`
+        );
+    }
+
+    if (typeof choice.value === 'string' && choice.value.length > MAX_CHOICE_VALUE_LENGTH) {
+        validationErrors.push(
+            `Command ${commandName} ${optionPath} choice ${choice.name} has a value longer than ${MAX_CHOICE_VALUE_LENGTH} chars`
+        );
+    }
+}
+
+function validateOption(option, commandName, optionPath, validationErrors) {
+    if (typeof option.name === 'string' && option.name.length > 32) {
+        validationErrors.push(`Command ${commandName} ${optionPath} has a name longer than 32 chars`);
+    }
+
+    if (typeof option.description === 'string' && option.description.length > MAX_DESCRIPTION_LENGTH) {
+        validationErrors.push(`Command ${commandName} ${optionPath} has a description longer than ${MAX_DESCRIPTION_LENGTH} chars`);
+    }
+
+    if (Array.isArray(option.choices)) {
+        for (const choice of option.choices) {
+            validateChoice(choice, commandName, optionPath, validationErrors);
+        }
+    }
+
+    if (Array.isArray(option.options)) {
+        for (const subOption of option.options) {
+            validateOption(subOption, commandName, `${optionPath} subcommand ${option.name}`, validationErrors);
+        }
+    }
 }
 
 function validateCommands(commands) {
     const validationErrors = [];
 
     for (const cmd of commands) {
-        if (cmd.name && cmd.name.length > 32) {
-            validationErrors.push(`Command ${cmd.name} has name longer than 32 chars: "${cmd.name}" (${cmd.name.length} chars)`);
-        }
-        if (cmd.description && cmd.description.length > 110) {
-            validationErrors.push(`Command ${cmd.name} has description longer than 110 chars: "${cmd.description}" (${cmd.description.length} chars)`);
+        if (typeof cmd.name === 'string' && cmd.name.length > 32) {
+            validationErrors.push(`Command ${cmd.name} has a name longer than 32 chars`);
         }
 
-        if (!cmd.options) {
-            continue;
+        if (typeof cmd.description === 'string' && cmd.description.length > MAX_DESCRIPTION_LENGTH) {
+            validationErrors.push(`Command ${cmd.name} has a description longer than ${MAX_DESCRIPTION_LENGTH} chars`);
         }
 
-        for (const option of cmd.options) {
-            if (option.name && option.name.length > 32) {
-                validationErrors.push(`Command ${cmd.name} option ${option.name} has name longer than 32 chars: "${option.name}" (${option.name.length} chars)`);
-            }
-            if (option.description && option.description.length > 110) {
-                validationErrors.push(`Command ${cmd.name} option ${option.name} has description longer than 110 chars: "${option.description}" (${option.description.length} chars)`);
-            }
-
-            if (option.choices) {
-                for (const choice of option.choices) {
-                    if (choice.name && choice.name.length > 110) {
-                        validationErrors.push(`Command ${cmd.name} option ${option.name} choice ${choice.name} has name longer than 110 chars: "${choice.name}" (${choice.name.length} chars)`);
-                    }
-                    if (choice.value && choice.value.length > 100) {
-                        validationErrors.push(`Command ${cmd.name} option ${option.name} choice ${choice.name} has value longer than 100 chars: "${choice.value}" (${choice.value.length} chars)`);
-                    }
-                }
-            }
-
-            if (!option.options) {
-                continue;
-            }
-
-            for (const subOption of option.options) {
-                if (subOption.name && subOption.name.length > 32) {
-                    validationErrors.push(`Command ${cmd.name} subcommand ${option.name} option ${subOption.name} has name longer than 32 chars: "${subOption.name}" (${subOption.name.length} chars)`);
-                }
-                if (subOption.description && subOption.description.length > 110) {
-                    validationErrors.push(`Command ${cmd.name} subcommand ${option.name} option ${subOption.name} has description longer than 110 chars: "${subOption.description}" (${subOption.description.length} chars)`);
-                }
-
-                if (!subOption.choices) {
-                    continue;
-                }
-
-                for (const choice of subOption.choices) {
-                    if (choice.name && choice.name.length > 110) {
-                        validationErrors.push(`Command ${cmd.name} subcommand ${option.name} option ${subOption.name} choice ${choice.name} has name longer than 110 chars: "${choice.name}" (${choice.name.length} chars)`);
-                    }
-                    if (choice.value && choice.value.length > 100) {
-                        validationErrors.push(`Command ${cmd.name} subcommand ${option.name} option ${subOption.name} choice ${choice.name} has value longer than 100 chars: "${choice.value}" (${choice.value.length} chars)`);
-                    }
-                }
+        if (Array.isArray(cmd.options)) {
+            for (const option of cmd.options) {
+                validateOption(option, cmd.name, `option ${option.name}`, validationErrors);
             }
         }
     }
@@ -226,14 +201,11 @@ function prepareCommandsForRegistration(commands) {
         logger.warn(`Command count (${commands.length}) is near Discord's ${MAX_COMMANDS} global command limit`);
     }
 
-    if (commands.length <= MAX_COMMANDS) {
-        return commands;
+    if (commands.length > MAX_COMMANDS) {
+        throw new Error(`Command count (${commands.length}) exceeds Discord's ${MAX_COMMANDS} global command limit`);
     }
 
-    logger.warn(`Command count (${commands.length}) exceeds Discord limit (${MAX_COMMANDS}), truncating...`);
-    const truncated = commands.slice(0, MAX_COMMANDS);
-    logger.info(`Truncated to ${truncated.length} commands for registration`);
-    return truncated;
+    return commands;
 }
 
 async function registerGlobalCommands(client, clientId, commands, totalSubcommands) {
@@ -260,7 +232,7 @@ async function registerGlobalCommands(client, clientId, commands, totalSubcomman
     logger.info(`Registering ${commandsToRegister.length} global commands...`);
     await client.rest.put(`/applications/${clientId}/commands`, { body: commandsToRegister });
     logger.info(`Successfully registered ${commandsToRegister.length} global commands`);
-    logger.info('Global commands may take up to an hour to appear in all servers on first deploy');
+    logger.info('Global command registration completed');
 }
 
 export async function registerCommands(client, options = {}) {
@@ -277,20 +249,27 @@ export async function registerCommands(client, options = {}) {
 
 export async function reloadCommand(client, commandName) {
     const command = client.commands.get(commandName);
-    
+
     if (!command) {
         return { success: false, message: `Command "${commandName}" not found` };
     }
-    
+
     try {
         const commandPath = path.resolve(command.filePath);
         const moduleUrl = pathToFileURL(commandPath);
         moduleUrl.searchParams.set('t', Date.now().toString());
 
-        const newCommand = (await import(moduleUrl.href)).default;
-        
+        const commandModule = await import(moduleUrl.href);
+        const newCommand = commandModule.default || commandModule;
+
+        if (!newCommand?.data || !newCommand?.execute) {
+            throw new Error(`Reloaded command "${commandName}" is missing data or execute`);
+        }
+
+        newCommand.category = command.category;
+        newCommand.filePath = command.filePath;
         client.commands.set(commandName, newCommand);
-        
+
         logger.info(`Reloaded command: ${commandName}`);
         return { success: true, message: `Successfully reloaded command "${commandName}"` };
     } catch (error) {
