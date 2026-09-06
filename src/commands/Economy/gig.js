@@ -8,36 +8,36 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 const GIG_COOLDOWN = 45 * 60 * 1000;
 
 const GIG_ACTIVITIES = [
-    { name: "Cam Stream", min: 120, max: 450, risk: 0.2 },
-    { name: "Private Dance Session", min: 220, max: 700, risk: 0.25 },
-    { name: "After-Hours Club Host", min: 320, max: 900, risk: 0.3 },
-    { name: "VIP Companion Booking", min: 550, max: 1400, risk: 0.35 },
-    { name: "Exclusive Livestream", min: 850, max: 2200, risk: 0.4 },
+    { name: 'Freelance Design Job', min: 120, max: 450, risk: 0.2 },
+    { name: 'Event Staff Gig', min: 220, max: 700, risk: 0.25 },
+    { name: 'Night Shift Gig', min: 320, max: 900, risk: 0.3 },
+    { name: 'VIP Event Booking', min: 550, max: 1400, risk: 0.35 },
+    { name: 'Exclusive Production Job', min: 850, max: 2200, risk: 0.4 },
 ];
 
 const POSITIVE_OUTCOMES = [
-    "Your stream blew up and tips poured in.",
-    "A VIP booking paid far above average.",
-    "Your after-hours shift was packed and profitable.",
-    "Premium requests came through and your payout jumped.",
+    'Your project exceeded expectations and the client paid a bonus.',
+    'A premium booking paid far above average.',
+    'Your shift was packed and highly profitable.',
+    'Extra work came through and your payout jumped.',
 ];
 
 const FINE_OUTCOMES = [
-    "Venue security issued a compliance fine.",
-    "A moderation strike triggered a platform fee.",
-    "You were flagged and had to pay a penalty.",
+    'A venue compliance issue resulted in a fine.',
+    'A scheduling error triggered a service fee.',
+    'You were charged a penalty for a contract violation.',
 ];
 
 const ROBBED_OUTCOMES = [
-    "A fake buyer chargeback wiped part of your earnings.",
-    "A scam booking cleaned out a chunk of your cash.",
-    "You got baited by a fraud account and lost money.",
+    'A fake client chargeback wiped out part of your earnings.',
+    'A scam booking took a chunk of your cash.',
+    'A fraudulent account tricked you out of some money.',
 ];
 
 const LOSS_OUTCOMES = [
-    "The set flopped and you had to cover operating costs.",
-    "You burned budget on prep and made no return.",
-    "The shift went sideways and left you in the red.",
+    'The project flopped and you had to cover operating costs.',
+    'You burned budget on preparation and made no return.',
+    'The shift went sideways and left you in the red.',
 ];
 
 function randomInt(min, max) {
@@ -120,19 +120,21 @@ export default {
 
         if (!userData) {
             throw createError(
-                "Failed to load economy data for gig command",
+                'Failed to load economy data for gig command',
                 ErrorTypes.DATABASE,
-                "Failed to load your economy data. Please try again later.",
+                'Failed to load your economy data. Please try again later.',
                 { userId, guildId }
             );
         }
 
-        const lastGig = userData.lastSlut || 0;
+        // Read the renamed field first, but accept the legacy field so existing
+        // economy records keep their cooldown/history after the command rename.
+        const lastGig = userData.lastGig ?? userData.lastSlut ?? 0;
 
         if (now - lastGig < GIG_COOLDOWN) {
             const remainingTime = lastGig + GIG_COOLDOWN - now;
             throw createError(
-                "Gig cooldown active",
+                'Gig cooldown active',
                 ErrorTypes.RATE_LIMIT,
                 `You need to wait before you can work again! Try again in **${Math.ceil(remainingTime / 60000)}** minutes.`,
                 { timeRemaining: remainingTime, cooldownType: 'gig' }
@@ -142,21 +144,17 @@ export default {
         const activity = randomChoice(GIG_ACTIVITIES);
         const outcome = resolveOutcome(activity, userData.wallet || 0);
 
-        // Preserve existing economy history fields for backwards compatibility.
-        userData.lastSlut = now;
-        userData.totalSluts = (userData.totalSluts || 0) + 1;
-        userData.totalSlutEarnings = (userData.totalSlutEarnings || 0) + Math.max(0, outcome.delta);
-        userData.totalSlutLosses = (userData.totalSlutLosses || 0) + Math.max(0, -outcome.delta);
-
-        if (outcome.type !== 'payout') {
-            userData.failedSluts = (userData.failedSluts || 0) + 1;
-        }
+        userData.lastGig = now;
+        userData.totalGigs = (userData.totalGigs ?? userData.totalSluts ?? 0) + 1;
+        userData.totalGigEarnings = (userData.totalGigEarnings ?? userData.totalSlutEarnings ?? 0) + Math.max(0, outcome.delta);
+        userData.totalGigLosses = (userData.totalGigLosses ?? userData.totalSlutLosses ?? 0) + Math.max(0, -outcome.delta);
+        userData.failedGigs = (userData.failedGigs ?? userData.failedSluts ?? 0) + (outcome.type !== 'payout' ? 1 : 0);
 
         userData.wallet = Math.max(0, (userData.wallet || 0) + outcome.delta);
 
         await setEconomyData(client, guildId, userId, userData);
 
-        logger.info(`[ECONOMY_TRANSACTION] Gig activity resolved`, {
+        logger.info('[ECONOMY_TRANSACTION] Gig activity resolved', {
             userId,
             guildId,
             activity: activity.name,
@@ -168,12 +166,12 @@ export default {
 
         const amountLabel = `${outcome.delta >= 0 ? '+' : '-'}$${Math.abs(outcome.delta).toLocaleString()}`;
         const summaryLines = [
-            `${outcome.message}`,
+            outcome.message,
             `💸 **Net Result:** ${amountLabel}`,
             `💳 **Current Balance:** $${userData.wallet.toLocaleString()}`,
-            `📊 **Total Sessions:** ${userData.totalSluts}`,
-            `💵 **Total Earned:** $${(userData.totalSlutEarnings || 0).toLocaleString()}`,
-            `🧾 **Total Lost:** $${(userData.totalSlutLosses || 0).toLocaleString()}`
+            `📊 **Total Gigs:** ${userData.totalGigs}`,
+            `💵 **Total Earned:** $${(userData.totalGigEarnings || 0).toLocaleString()}`,
+            `🧾 **Total Lost:** $${(userData.totalGigLosses || 0).toLocaleString()}`
         ];
 
         const embed = createEmbed({
