@@ -5,9 +5,9 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-const SLUT_COOLDOWN = 45 * 60 * 1000;
+const GIG_COOLDOWN = 45 * 60 * 1000;
 
-const SLUT_ACTIVITIES = [
+const GIG_ACTIVITIES = [
     { name: "Cam Stream", min: 120, max: 450, risk: 0.2 },
     { name: "Private Dance Session", min: 220, max: 700, risk: 0.25 },
     { name: "After-Hours Club Host", min: 320, max: 900, risk: 0.3 },
@@ -103,86 +103,86 @@ function resolveOutcome(activity, wallet) {
 
 export default {
     data: new SlashCommandBuilder()
-        .setName('slut')
-        .setDescription('Take a risky provocative job for random payout or loss'),
+        .setName('gig')
+        .setDescription('Take a risky gig for a random payout or loss'),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
         if (!deferred) return;
 
-            const userId = interaction.user.id;
-            const guildId = interaction.guildId;
-            const now = Date.now();
+        const userId = interaction.user.id;
+        const guildId = interaction.guildId;
+        const now = Date.now();
 
-            logger.debug(`[ECONOMY] Slut command started for ${userId}`, { userId, guildId });
+        logger.debug(`[ECONOMY] Gig command started for ${userId}`, { userId, guildId });
 
-            const userData = await getEconomyData(client, guildId, userId);
+        const userData = await getEconomyData(client, guildId, userId);
 
-            if (!userData) {
-                throw createError(
-                    "Failed to load economy data for slut command",
-                    ErrorTypes.DATABASE,
-                    "Failed to load your economy data. Please try again later.",
-                    { userId, guildId }
-                );
-            }
+        if (!userData) {
+            throw createError(
+                "Failed to load economy data for gig command",
+                ErrorTypes.DATABASE,
+                "Failed to load your economy data. Please try again later.",
+                { userId, guildId }
+            );
+        }
 
-            const lastSlut = userData.lastSlut || 0;
+        const lastGig = userData.lastSlut || 0;
 
-            if (now - lastSlut < SLUT_COOLDOWN) {
-                const remainingTime = lastSlut + SLUT_COOLDOWN - now;
-                throw createError(
-                    "Slut cooldown active",
-                    ErrorTypes.RATE_LIMIT,
-                    `You need to wait before you can work again! Try again in **${Math.ceil(remainingTime / 60000)}** minutes.`,
-                    { timeRemaining: remainingTime, cooldownType: 'slut' }
-                );
-            }
+        if (now - lastGig < GIG_COOLDOWN) {
+            const remainingTime = lastGig + GIG_COOLDOWN - now;
+            throw createError(
+                "Gig cooldown active",
+                ErrorTypes.RATE_LIMIT,
+                `You need to wait before you can work again! Try again in **${Math.ceil(remainingTime / 60000)}** minutes.`,
+                { timeRemaining: remainingTime, cooldownType: 'gig' }
+            );
+        }
 
-            const activity = randomChoice(SLUT_ACTIVITIES);
+        const activity = randomChoice(GIG_ACTIVITIES);
+        const outcome = resolveOutcome(activity, userData.wallet || 0);
 
-            const outcome = resolveOutcome(activity, userData.wallet || 0);
+        // Preserve existing economy history fields for backwards compatibility.
+        userData.lastSlut = now;
+        userData.totalSluts = (userData.totalSluts || 0) + 1;
+        userData.totalSlutEarnings = (userData.totalSlutEarnings || 0) + Math.max(0, outcome.delta);
+        userData.totalSlutLosses = (userData.totalSlutLosses || 0) + Math.max(0, -outcome.delta);
 
-            userData.lastSlut = now;
-            userData.totalSluts = (userData.totalSluts || 0) + 1;
-            userData.totalSlutEarnings = (userData.totalSlutEarnings || 0) + Math.max(0, outcome.delta);
-            userData.totalSlutLosses = (userData.totalSlutLosses || 0) + Math.max(0, -outcome.delta);
+        if (outcome.type !== 'payout') {
+            userData.failedSluts = (userData.failedSluts || 0) + 1;
+        }
 
-            if (outcome.type !== 'payout') {
-                userData.failedSluts = (userData.failedSluts || 0) + 1;
-            }
+        userData.wallet = Math.max(0, (userData.wallet || 0) + outcome.delta);
 
-            userData.wallet = Math.max(0, (userData.wallet || 0) + outcome.delta);
+        await setEconomyData(client, guildId, userId, userData);
 
-            await setEconomyData(client, guildId, userId, userData);
+        logger.info(`[ECONOMY_TRANSACTION] Gig activity resolved`, {
+            userId,
+            guildId,
+            activity: activity.name,
+            outcomeType: outcome.type,
+            amountDelta: outcome.delta,
+            newWallet: userData.wallet,
+            timestamp: new Date().toISOString()
+        });
 
-            logger.info(`[ECONOMY_TRANSACTION] Slut activity resolved`, {
-                userId,
-                guildId,
-                activity: activity.name,
-                outcomeType: outcome.type,
-                amountDelta: outcome.delta,
-                newWallet: userData.wallet,
-                timestamp: new Date().toISOString()
-            });
+        const amountLabel = `${outcome.delta >= 0 ? '+' : '-'}$${Math.abs(outcome.delta).toLocaleString()}`;
+        const summaryLines = [
+            `${outcome.message}`,
+            `💸 **Net Result:** ${amountLabel}`,
+            `💳 **Current Balance:** $${userData.wallet.toLocaleString()}`,
+            `📊 **Total Sessions:** ${userData.totalSluts}`,
+            `💵 **Total Earned:** $${(userData.totalSlutEarnings || 0).toLocaleString()}`,
+            `🧾 **Total Lost:** $${(userData.totalSlutLosses || 0).toLocaleString()}`
+        ];
 
-            const amountLabel = `${outcome.delta >= 0 ? '+' : '-'}$${Math.abs(outcome.delta).toLocaleString()}`;
-            const summaryLines = [
-                `${outcome.message}`,
-                `💸 **Net Result:** ${amountLabel}`,
-                `💳 **Current Balance:** $${userData.wallet.toLocaleString()}`,
-                `📊 **Total Sessions:** ${userData.totalSluts}`,
-                `💵 **Total Earned:** $${(userData.totalSlutEarnings || 0).toLocaleString()}`,
-                `🧾 **Total Lost:** $${(userData.totalSlutLosses || 0).toLocaleString()}`
-            ];
+        const embed = createEmbed({
+            title: outcome.title,
+            description: summaryLines.join('\n'),
+            color: outcome.delta >= 0 ? 'success' : 'error',
+            timestamp: true
+        });
 
-            const embed = createEmbed({
-                title: outcome.title,
-                description: summaryLines.join('\n'),
-                color: outcome.delta >= 0 ? 'success' : 'error',
-                timestamp: true
-            });
-
-            await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-    }, { command: 'slut' })
+        await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
+    }, { command: 'gig' })
 };

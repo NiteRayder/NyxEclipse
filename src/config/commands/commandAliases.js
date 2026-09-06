@@ -19,6 +19,7 @@ export const commandAliases = {
     'pay': 'pay',
     'give': 'pay',
     'send': 'pay',
+    'gig': 'gig',
 
     'ping': 'ping',
     'help': 'help',
@@ -144,7 +145,7 @@ export function resolveCommandAlias(commandName) {
 /**
  * Resolve a subcommand alias to its full subcommand name
  * @param {string} subcommandName - The subcommand name (could be an alias)
- * @returns {string} - The full subcommand name, or the original if not an alias
+ * @returns {string} - The subcommand name (could be an alias)
  */
 export function resolveSubcommandAlias(subcommandName) {
     const normalized = subcommandName.toLowerCase();
