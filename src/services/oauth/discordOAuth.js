@@ -8,7 +8,7 @@ const stateStore = new Map();
 const sessionStore = new Map();
 
 const STATE_TTL_MS = 10 * 60 * 1000;
-const SESSION_TTL_MS = 60 * 60 * 1000;
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -57,7 +57,7 @@ export function createDiscordAuthorizationUrl() {
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
-    scope: 'identify email guilds',
+    scope: 'identify guilds',
     state,
     prompt: 'consent',
   });
@@ -107,7 +107,7 @@ async function discordRequest(path, accessToken) {
   const response = await fetch(`${DISCORD_API}${path}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'User-Agent': 'NyxEclypse/1.0 GuildNexus',
+      'User-Agent': 'NyxEclipse/2.1 GuildNexus',
     },
   });
 
@@ -176,7 +176,7 @@ export async function getUserGuilds(sessionToken) {
 
 export function getDashboardCallbackUrl(sessionToken) {
   const { dashboardUrl } = getOAuthConfig();
-  const url = new URL('/GuildNexus-WebDashboard/pages/invite.html', dashboardUrl);
+  const url = new URL('/pages/invite', dashboardUrl);
   url.searchParams.set('session', sessionToken);
   return url.toString();
 }
